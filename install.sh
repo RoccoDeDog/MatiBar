@@ -8,7 +8,7 @@ cd "$DIR"
 sh "$DIR/build.sh"
 
 echo "Installing to /Applications ..."
-pkill -x MatiBar 2>/dev/null || true
+pkill -x MatiBar 2>/dev/null || true; pkill -x matibar 2>/dev/null || true
 rm -rf "/Applications/MatiBar.app"
 cp -R "$DIR/MatiBar.app" "/Applications/MatiBar.app"
 

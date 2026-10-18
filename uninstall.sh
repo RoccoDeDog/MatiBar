@@ -3,7 +3,7 @@
 PLIST="$HOME/Library/LaunchAgents/com.mati.matibar.plist"
 launchctl unload "$PLIST" 2>/dev/null || true
 rm -f "$PLIST"
-pkill -x MatiBar 2>/dev/null || true
+pkill -x MatiBar 2>/dev/null || true; pkill -x matibar 2>/dev/null || true
 rm -rf "/Applications/MatiBar.app"
 
 # Restore Apple's Control Strip (brightness / volume / Siri).

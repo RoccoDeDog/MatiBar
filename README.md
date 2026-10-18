@@ -4,9 +4,9 @@
 
 MatiBar replaces Apple's Control Strip with your own full-width Touch Bar: a live
 animated battery with real-time power draw, a Spotify / Apple Music player with a
-draggable timeline, system volume and brightness controls, and a one-tap button to
-open Claude. No third-party frameworks, no dependencies — just the system APIs that
-Apple's own Touch Bar uses.
+draggable timeline, system volume and brightness controls, an animated day & weather
+view, and a one-tap button to open Claude. No third-party frameworks, no dependencies —
+just the system APIs that Apple's own Touch Bar uses.
 
 > Built for Apple Silicon MacBook Pro (13"/15"/16") with a Touch Bar, on modern macOS.
 > MTMR and the other old tools don't work on current macOS anymore — this one does,
@@ -45,6 +45,22 @@ Apple's own Touch Bar uses.
 
 - **10-bar display brightness** (`DisplayServices`) — tap, drag, or use the sun − / +
   buttons. A safety floor keeps the screen from ever going fully black.
+
+## Day & weather view — tap the clock
+
+![weather](screenshots/weather.png)
+
+![weather at night](screenshots/weather-night.png)
+
+- **Full-day timeline** (00:00 → 23:59) with hourly tick marks, and the **sun's arc drawn
+  only across the daylight hours** (sunrise → sunset). A marker rides the arc at the
+  current time — a **sun** by day, a **real-phase moon** by night (hemisphere-aware).
+- **Animated background that matches the real conditions and time of day** — clear blue
+  day, starry night, drifting clouds, falling rain, snow, fog, and storms with lightning.
+- **Rain icons** appear over upcoming hours with a high chance of rain.
+- Current **temperature, condition, date, and the day's high / low**. Weather is from the
+  free [Open-Meteo](https://open-meteo.com) API with IP-based location — no key, works
+  anywhere.
 
 The **Claude** and **audio** buttons stay pinned to the right at all times — opening a
 panel only changes what's to their left, so they never move.
@@ -90,6 +106,8 @@ uses. On top of that:
 - **Brightness** — `DisplayServices` (`DisplayServicesGet/SetBrightness`).
 - **Media** — AppleScript to Spotify / Apple Music for metadata, scrubbing and transport.
   System volume via the standard `set volume` command.
+- **Weather** — Open-Meteo (forecast + hourly rain) with IP-based geolocation; the sky,
+  timeline, and moon phase are all drawn from scratch — no weather SDK or entitlement.
 
 Everything is one file: [`matibar.m`](matibar.m). The [`examples/`](examples) folder has a
 minimal "hello world" Touch Bar button and a demo that plays looping video on the bar.

@@ -41,6 +41,16 @@ El texto del `%` siempre se lee (blanco sobre la parte vacía, oscuro sobre la p
 - **Volumen (🔊)**: volumen del sistema.
 - Controla Spotify / Apple Music (lo que esté sonando).
 
+## Modo día / clima (tocar el reloj)
+
+Tocá **el reloj** y todo a su derecha se transforma en la vista del día; tocá de nuevo para volver.
+
+- **Línea de tiempo del día completo** (00:00 → 23:59) con marcas cada hora.
+- **Arco del sol** dibujado solo en la franja de luz (amanecer → atardecer), con el marcador de ahora: **sol** de día, **luna con su fase real** de noche.
+- **Fondo animado** que hace match con la hora y el clima reales: día despejado, noche estrellada, nublado, lluvia, nieve, niebla, tormenta con rayos.
+- **Íconos de lluvia** sobre las horas próximas con alta probabilidad.
+- Temperatura, condición, fecha y máxima/mínima del día. Datos de Open-Meteo (gratis, ubicación por IP).
+
 ## Encender / apagar
 - Encender (full-width): `./start.sh`
 - Apagar y volver al Touch Bar normal de Apple: `./stop.sh`
