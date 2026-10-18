@@ -1,0 +1,19 @@
+# Build output
+MatiBar.app/
+*.app/
+*.o
+*.dSYM/
+
+# Locally compiled binaries (built from source via build.sh)
+matibar
+vbar
+matibar_poc
+probe/
+
+# Generated demo media
+assets/
+examples/plasma.mp4
+
+# Local state / scratch
+.touchbar_mode_backup.txt
+.DS_Store
