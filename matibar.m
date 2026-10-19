@@ -225,6 +225,10 @@ static BOOL kbdInit(void){ if(_kbdC)return YES;
     _kbdC=c; _kbdID=[a[0] unsignedLongLongValue]; return YES; }
 static float kbdGet(void){ if(!kbdInit())return -1; return ((float(*)(id,SEL,unsigned long long))objc_msgSend)(_kbdC,NSSelectorFromString(@"brightnessForKeyboard:"),_kbdID); }
 static void kbdSet(float v){ if(!kbdInit())return; ((void(*)(id,SEL,float,unsigned long long))objc_msgSend)(_kbdC,NSSelectorFromString(@"setBrightness:forKeyboard:"),v,_kbdID); }
+// sin fundido: apaga/prende en el mismo instante que la pantalla (setBrightness:forKeyboard: hace un fundido lento)
+static void kbdSetNow(float v){ if(!kbdInit())return; SEL s=NSSelectorFromString(@"setBrightness:fadeSpeed:commit:forKeyboard:");
+    BOOL ok=[_kbdC respondsToSelector:s] && ((BOOL(*)(id,SEL,float,int,BOOL,unsigned long long))objc_msgSend)(_kbdC,s,v,0,YES,_kbdID);
+    if(!ok)kbdSet(v); } // si la llamada rápida no existe o falla, la normal (con fundido)
 static BOOL kbdAutoGet(void){ if(!kbdInit())return NO; return ((BOOL(*)(id,SEL,unsigned long long))objc_msgSend)(_kbdC,NSSelectorFromString(@"isAutoBrightnessEnabledForKeyboard:"),_kbdID); }
 static void kbdAutoSet(BOOL on){ if(!kbdInit())return; ((void(*)(id,SEL,BOOL,unsigned long long))objc_msgSend)(_kbdC,NSSelectorFromString(@"enableAutoBrightness:forKeyboard:"),on,_kbdID); }
 
@@ -242,7 +246,7 @@ static void blackoutRestore(BOOL safetyFloor,BOOL restoreAppleStrip){
     if(![j isKindOfClass:[NSDictionary class]]){ j=@{}; safetyFloor=YES; } // ilegible: devolver un brillo seguro y borrarlo igual
     float b=[j[@"bright"] floatValue]; if(safetyFloor && b<0.35)b=0.5; // en emergencia, nunca volver a algo casi invisible
     dsInit(); brightSetRaw(b>0.05?b:0.5);
-    if(j[@"kbd"]){ float k=[j[@"kbd"] floatValue]; if(k>=0)kbdSet(k); } if([j[@"kbdAuto"] boolValue])kbdAutoSet(YES);
+    if(j[@"kbd"]){ float k=[j[@"kbd"] floatValue]; if(k>=0)kbdSetNow(k); } if([j[@"kbdAuto"] boolValue])kbdAutoSet(YES);
     [[NSFileManager defaultManager] removeItemAtPath:p error:nil];
     if(restoreAppleStrip) shRun(@"defaults write com.apple.touchbar.agent PresentationModeGlobal -string appWithControlStrip; killall ControlStrip 2>/dev/null");
 }
@@ -580,13 +584,15 @@ static NSString* wxIcon(int c,BOOL night){ if(c<=1)return night?@"moon.stars.fil
 @end
 
 @class AppDelegate; static void psCB(void *ctx);
-// Visualizador: 5 filas de píxeles cuadrados que reaccionan al audio del sistema. Tres estilos
-// (`defaults write com.mati.matibar visualizer espejo|vertical|horizontal`; mantener los píxeles los rota):
-//  - espejo: cada columna es una frecuencia; graves rojos al centro, agudos azules a los bordes; crece en alto.
-//  - vertical / horizontal (reactor balanceado): cada píxel tiene una frecuencia fija y ve una cantidad parecida de
-//    tajadas de la FFT (lineal hasta ~3.9 kHz, log arriba). Vertical: se leen por columnas (graves a la izquierda);
-//    horizontal: por filas (graves abajo). Se encienden con los golpes y se enfrían en el lugar.
-enum { VZS_ESPEJO=1, VZS_VERTICAL=2, VZS_HORIZONTAL=3, VZS_COUNT=3 }; // por defecto: horizontal
+// Visualizador: 5 filas de píxeles cuadrados que reaccionan al audio del sistema. Dos estilos
+// (`defaults write com.mati.matibar visualizer horizontal|espejo`; mantener los píxeles los alterna):
+//  - horizontal (por defecto): cada píxel tiene una frecuencia fija y ve una cantidad parecida de tajadas de la
+//    FFT (lineal hasta ~3.9 kHz, log arriba), leídas por filas (graves abajo). Se encienden con los golpes y se
+//    enfrían en el lugar.
+//  - espejo (térmico): cada columna es una frecuencia, graves al centro y agudos a los bordes; crece en alto desde
+//    la fila del medio con el volumen, y el color es temperatura: lo tranquilo azul, los golpes al rojo blanco.
+// En los dos, una frecuencia que se sostiene sonando mantiene su luz encendida mientras dure.
+enum { VZS_HORIZONTAL=1, VZS_ESPEJO=2, VZS_COUNT=2 };
 #define VZ_COLS 200
 @interface VizView : NSView
 @property (copy,nonatomic) NSString *msg;
@@ -597,7 +603,8 @@ enum { VZS_ESPEJO=1, VZS_VERTICAL=2, VZS_HORIZONTAL=3, VZS_COUNT=3 }; // por def
 - (void)render;
 @property (copy,nonatomic) void(^onLong)(void);
 @end
-@implementation VizView{ uint8_t *_buf; int _bw; NSTextField *_label; float _sp[VZ_SPEC], _hold[VZ_COLS], _kick, _heat[VZ_BANDS][VZ_COLS], _avg[VZ_BANDS][VZ_COLS]; BOOL _avgReady; LPButton *_press; }
+@implementation VizView{ uint8_t *_buf; int _bw; NSTextField *_label; float _sp[VZ_SPEC], _hold[VZ_COLS], _kick, _heat[VZ_BANDS][VZ_COLS], _avg[VZ_BANDS][VZ_COLS], _onset[VZ_BANDS][VZ_COLS];
+    uint8_t _miss[VZ_BANDS][VZ_COLS]; BOOL _avgReady; LPButton *_press; }
 - (void)dealloc{ free(_buf); }
 // El Touch Bar no entrega toques a un NSView: un botón transparente encima recibe el "mantener".
 - (void)setOnLong:(void(^)(void))b{ _onLong=[b copy];
@@ -608,43 +615,64 @@ enum { VZS_ESPEJO=1, VZS_VERTICAL=2, VZS_HORIZONTAL=3, VZS_COUNT=3 }; // por def
     if(m.length && !_label){ _label=[NSTextField labelWithString:@""]; _label.font=[NSFont systemFontOfSize:11]; _label.textColor=[NSColor colorWithWhite:0.55 alpha:1];
         _label.frame=NSMakeRect(10,7,self.bounds.size.width-20,16); [self addSubview:_label]; }
     _label.stringValue=m?:@""; _label.hidden=!m.length; }
-- (void)spectrum:(const float*)sp kick:(float)k{ memcpy(_sp,sp,sizeof _sp); _kick=k; [self render]; }
 // Reactor, determinista: cada píxel tiene una frecuencia fija (35 Hz -> 16 kHz). Se enciende cuando su frecuencia
 // sobresale de su propio promedio reciente (una nota que entra, un golpe) y se enfría en el lugar.
 // Sin azar: el mismo sonido dibuja siempre el mismo patrón.
 #define VZ_GATE   0.25f   // energía mínima de la frecuencia (debajo: nada; en silencio no parpadea)
 #define VZ_HIT_MIN 0.12f  // lo que tiene que sobresalir de su promedio para empezar a encender
 #define VZ_HIT    0.26f   // ...y lo que tiene que sobresalir para llegar al blanco
-#define VZ_SUSTAIN 0.65f  // nivel desde el que una nota sostenida sigue brillando (tenue)
+#define VZ_HOLD_RATIO 0.78f // la nota sigue "la misma" mientras no caiga bajo el 78% del nivel con que entró
+#define VZ_HOLD_HEAT  0.72f // calor que mantiene una nota sostenida (naranja-rojo) mientras suena
+#define VZ_HOLD_MISS  5     // cuadros seguidos por debajo antes de soltarla (tolera el titileo de la FFT)
 #define VZ_KNEE   0.40f   // lo que no llega a esto queda en negro (una tajada sola es ruidosa: sin alfombra)
 #define VZ_COOL   0.85f   // enfriamiento por cuadro a 30 fps (~0.3 s hasta apagarse)
+#define VZ_COOL_H 0.0f    // horizontal sin sangrado: un píxel se apaga en el cuadro en que su frecuencia deja de sonar
 #define VZ_GLOW   0.50f   // resplandor máximo que un píxel le presta a sus vecinos (no los enciende)
-#define VZ_GLOW_V 0.20f   // vertical: resplandor suave a los vecinos
-- (void)resetState{ memset(_heat,0,sizeof _heat); memset(_avg,0,sizeof _avg); memset(_hold,0,sizeof _hold); _avgReady=NO; }
+- (void)resetState{ memset(_heat,0,sizeof _heat); memset(_avg,0,sizeof _avg); memset(_hold,0,sizeof _hold); memset(_onset,0,sizeof _onset); memset(_miss,0,sizeof _miss); _avgReady=NO; }
+// Calor de una frecuencia (determinista). Se enciende cuando sobresale de su promedio reciente; si después la
+// misma frecuencia se sostiene sonando, su calor no baja de VZ_HOLD_HEAT hasta que el sonido se va.
+// cool: enfriamiento por cuadro; levelHold: el calor sostenido depende de qué tan fuerte suena la nota (si no, fijo)
+static float vzHeat(float e,float *avg,float *heat,float *onset,uint8_t *miss,BOOL seed,float cool,BOOL levelHold){
+    if(seed)*avg=e; float m=*avg; *avg=m+(e-m)*0.06f;                  // promedio reciente (~0.5 s)
+    float ign=(e-m-VZ_HIT_MIN)/VZ_HIT; if(e<VZ_GATE)ign=0; ign=ign<VZ_KNEE?0:(ign>1?1:ign);
+    if(ign>0 && (e>*onset || *miss>0)){ *onset=e; *miss=0; }           // entra una nota (o vuelve a golpear mientras la anterior se apaga)
+    float h=*heat*cool; float hold=VZ_HOLD_HEAT;
+    if(levelHold){ float l=(e-VZ_GATE)/(1-VZ_GATE); hold=0.45f+0.45f*(l<0?0:(l>1?1:l)); } // suave magenta ... fuerte amarillo
+    if(*onset>0){
+        if(e>=VZ_GATE && e>=*onset*VZ_HOLD_RATIO){ *miss=0; h=fmaxf(h,hold); } // sigue sonando: luz encendida
+        else if(++*miss>VZ_HOLD_MISS){ *onset=0; *miss=0; }            // se fue: se enfría normal
+        else h=fmaxf(h,hold); }
+    *heat=fmaxf(h,ign); return *heat;
+}
+// Espejo térmico: cada columna (espejada desde el centro) tiene su frecuencia, su nivel y su calor.
+- (void)spectrum:(const float*)sp kick:(float)k{
+    memcpy(_sp,sp,sizeof _sp); _kick=k;
+    int cols=(int)((self.bounds.size.width*2-4)/11); if(cols>VZ_COLS)cols=VZ_COLS; if(cols<3){ [self render]; return; }
+    BOOL any=NO; for(int i=0;i<VZ_SPEC;i++) if(sp[i]>0.01f){ any=YES; break; }
+    BOOL seed=!_avgReady && any; if(seed)_avgReady=YES;
+    float c0=(cols-1)/2.0f;
+    for(int c=0;c<cols;c++){ float f=fabsf(c-c0)/c0, x=f*(VZ_SPEC-1); int i=(int)x; if(i>VZ_SPEC-2)i=VZ_SPEC-2; float u=x-i;
+        float e=sp[i]*(1-u)+sp[i+1]*u;
+        _hold[c]=fmaxf(e,_hold[c]-0.05f);                               // nivel: sube al instante, baja rápido
+        vzHeat(e,&_avg[2][c],&_heat[2][c],&_onset[2][c],&_miss[2][c],seed,VZ_COOL,NO); }
+    [self render];
+}
 - (void)reactor:(const float*)spec{
     int cols=(int)((self.bounds.size.width*2-4)/11); if(cols>VZ_COLS)cols=VZ_COLS; if(cols<8)return;
     BOOL any=NO; for(int i=0;i<VZ_FINE;i++) if(spec[i]>0.01f){ any=YES; break; }
     BOOL seed=!_avgReady && any; if(seed)_avgReady=YES;                 // primer audio: el promedio arranca ahí (sin destello)
     for(int r=0;r<VZ_BANDS;r++) for(int c=0;c<cols;c++){
-        // vertical: las frecuencias avanzan por columnas; horizontal: por filas
-        float x=(self.style==VZS_VERTICAL ? (c+(r+0.5f)/VZ_BANDS)/cols : (r+(c+0.5f)/cols)/VZ_BANDS)*(VZ_FINE-1); int i=(int)x; if(i>VZ_FINE-2)i=VZ_FINE-2; float u=x-i;
-        float e=spec[i]*(1-u)+spec[i+1]*u; if(seed)_avg[r][c]=e; float m=_avg[r][c];
-        _avg[r][c]=m+(e-m)*0.06f;                                    // promedio reciente de esta frecuencia (~0.5 s)
-        float hit=(e-m-VZ_HIT_MIN)/VZ_HIT, sus=(e-VZ_SUSTAIN)/(1-VZ_SUSTAIN)*0.45f;
-        float ign=e<VZ_GATE?0:fmaxf(hit,sus); ign=ign<VZ_KNEE?0:(ign>1?1:ign);  // se enciende lo que entra o golpea
-        _heat[r][c]=fmaxf(_heat[r][c]*VZ_COOL,ign); }
+        // las frecuencias se leen por filas, como texto (graves abajo a la izquierda)
+        float x=(r+(c+0.5f)/cols)/VZ_BANDS*(VZ_FINE-1); int i=(int)x; if(i>VZ_FINE-2)i=VZ_FINE-2; float u=x-i;
+        float e=spec[i]*(1-u)+spec[i+1]*u;
+        vzHeat(e,&_avg[r][c],&_heat[r][c],&_onset[r][c],&_miss[r][c],seed,VZ_COOL_H,YES); }
     [self render];
 }
-static void vzGrad(float t,float o[3]);
-// reactor: mismo degradé, pero lo más caliente llega al blanco
-static void vzGradHot(float t,float o[3]){
-    if(t<=0.9f){ vzGrad(t,o); return; } float u=(t-0.9f)/0.1f; if(u>1)u=1;
-    static const float R[3]={255,45,40}, Wt[3]={255,235,215}; for(int k=0;k<3;k++) o[k]=R[k]+(Wt[k]-R[k])*u;
-}
-static void vzGrad(float t,float o[3]){
-    static const float P[5]={0,0.28,0.5,0.66,0.9};
-    static const float C[5][3]={{10,28,95},{30,115,230},{80,210,255},{255,120,30},{255,45,40}};
-    t=t<0?0:(t>1?1:t); int i=0; while(i<3 && t>P[i+1])i++;
+// espejo térmico: paleta de cámara térmica (azul marino -> violeta -> magenta -> rojo -> naranja -> amarillo -> blanco)
+static void vzGradThermal(float t,float o[3]){
+    static const float P[7]={0,0.25f,0.45f,0.62f,0.78f,0.9f,1};
+    static const float C[7][3]={{10,20,90},{60,40,190},{170,40,170},{235,50,60},{255,140,20},{255,220,60},{255,250,235}};
+    t=t<0?0:(t>1?1:t); int i=0; while(i<5 && t>P[i+1])i++;
     float u=(t-P[i])/(P[i+1]-P[i]); if(u>1)u=1;
     for(int k=0;k<3;k++) o[k]=C[i][k]+(C[i+1][k]-C[i][k])*u;
 }
@@ -668,22 +696,22 @@ static void vzCell(uint8_t *buf,int W,int H,int x,int y,const float rgb[3]){
     if(!_buf||W!=_bw){ free(_buf); _buf=calloc((size_t)W*H,4); _bw=W; }
     memset(_buf,0,(size_t)W*H*4);
     int cols=(W-4)/P; if(cols>VZ_COLS)cols=VZ_COLS;
-    if(self.style==VZS_ESPEJO && cols>=3){ // espectro espejado: crece desde la fila del medio hacia arriba y abajo
-        float c0=(cols-1)/2.0f; static const float th[3]={0.08f,0.4f,0.72f};
-        for(int c=0;c<cols;c++){ float f=fabsf(c-c0)/c0, x=f*(VZ_SPEC-1); int i=(int)x; if(i>VZ_SPEC-2)i=VZ_SPEC-2; float u=x-i;
-            float e=_sp[i]*(1-u)+_sp[i+1]*u; _hold[c]=fmaxf(e,_hold[c]-0.027f); float e2=_hold[c];
-            float rgb0[3]; vzGrad(0.92f-f*0.75f,rgb0);
-            for(int r=0;r<VZ_BANDS;r++){ float v=(e2-th[abs(r-2)])/0.28f; if(v<=0)continue;
-                float br=fminf(1,0.35f+v*0.65f)*(0.75f+0.25f*_kick); if(br<0.12f)continue;
-                float k=0.35f+0.65f*br, rgb[3]={rgb0[0]*k,rgb0[1]*k,rgb0[2]*k};
+    if(self.style==VZS_ESPEJO && cols>=3){ // espejo térmico: crece desde la fila del medio; el color es temperatura
+        static const float th[3]={0.06f,0.34f,0.62f};
+        for(int c=0;c<cols;c++){ float lev=_hold[c], heat=_heat[2][c];
+            float L=fminf(1,lev+0.25f*heat);                           // la altura sale del volumen; el calor suma ~1 fila
+            for(int r=0;r<VZ_BANDS;r++){ int d=abs(r-2); if(L<th[d])continue;
+                float br=fminf(1,0.35f+(L-th[d])/0.26f*0.65f)*(0.8f+0.2f*_kick);
+                float T=fmaxf(0.12f+0.55f*lev,heat*(1-0.14f*d))-0.05f*d; // tranquilo = azul, golpe = rojo blanco; las puntas, más frías
+                float rgb[3]; vzGradThermal(T,rgb); float k=0.35f+0.65f*fmaxf(br,heat); rgb[0]*=k; rgb[1]*=k; rgb[2]*=k;
                 vzCell(_buf,W,H,3+c*P,H-2-(r+1)*P+1,rgb); } }
-    } else if(self.style!=VZS_ESPEJO){ // reactor
+    } else if(self.style==VZS_HORIZONTAL){ // reactor horizontal
         for(int r=0;r<VZ_BANDS;r++) for(int c=0;c<cols;c++){ float h=_heat[r][c], n=0;
             if(c>0)n=fmaxf(n,_heat[r][c-1]); if(c<cols-1)n=fmaxf(n,_heat[r][c+1]);
             if(r>0)n=fmaxf(n,_heat[r-1][c]); if(r<VZ_BANDS-1)n=fmaxf(n,_heat[r+1][c]);
-            BOOL vert=self.style==VZS_VERTICAL; float g=n*(vert?VZ_GLOW_V:VZ_GLOW); if(h<0.24f)h=0;  // el píxel propio se apaga bajo 24%...
-            h=fmaxf(h,g>=(vert?0.08f:0.24f)?g:0); if(h<0.08f)continue;                      // ...el halo: vertical 20% (visible desde 8%), horizontal 50%
-            float rgb[3]; vzGradHot(h,rgb); float k=0.35f+0.65f*h; rgb[0]*=k; rgb[1]*=k; rgb[2]*=k;
+            float g=n*VZ_GLOW; if(h<0.24f)h=0;                                 // el píxel propio se apaga bajo 24%...
+            h=fmaxf(h,g>=0.24f?g:0); if(h<0.08f)continue;                       // ...y el halo de vecinos (máx. 50%) también
+            float rgb[3]; vzGradThermal(h,rgb); float k=0.35f+0.65f*h; rgb[0]*=k; rgb[1]*=k; rgb[2]*=k;
             vzCell(_buf,W,H,3+c*P,H-2-(r+1)*P+1,rgb); }
     }
     CGColorSpaceRef cs=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
@@ -778,11 +806,12 @@ static void vzCell(uint8_t *buf,int W,int H,int x,int y,const float rgb[3]){
         __weak AppDelegate *w=self; dispatch_source_set_event_handler(_vzSrc,^{ [w vizFrame]; }); dispatch_resume(_vzSrc); }
     else if(!on && _vzSrc){ dispatch_source_cancel(_vzSrc); _vzSrc=nil; }
 }
-static NSString *const vzKeys[VZS_COUNT]={@"espejo",@"vertical",@"horizontal"};
-// estilo guardado (`visualizer` = espejo|vertical|horizontal); MATIBAR_VIZSTYLE acepta el nombre (pruebas)
+static NSString *const vzKeys[VZS_COUNT]={@"horizontal",@"espejo"};
+// estilo guardado (`visualizer` = horizontal|espejo); MATIBAR_VIZSTYLE acepta el nombre (pruebas)
 - (int)vizStyleSetting{ char *vs=getenv("MATIBAR_VIZSTYLE"); NSString *k=vs?@(vs):[[NSUserDefaults standardUserDefaults] stringForKey:@"visualizer"];
     for(int i=0;i<VZS_COUNT;i++) if([k isEqualToString:vzKeys[i]]) return i+1;
-    return VZS_HORIZONTAL; } // sin preferencia: horizontal balanceado
+    if([k isEqualToString:@"vertical"]) return VZS_ESPEJO; // el vertical se fusionó con el espejo
+    return VZS_HORIZONTAL; } // sin preferencia: horizontal
 - (void)vizApplyStyle:(int)st{ gSpecN=(st==VZS_ESPEJO)?VZ_SPEC:VZ_FINE; gSpecBal=(st!=VZS_ESPEJO); _viz.style=st; [_viz resetState];
     os_unfair_lock_lock(&gBandLock); memset(gSpec,0,sizeof gSpec); os_unfair_lock_unlock(&gBandLock); } // sin restos del estilo anterior (evita destello)
 // La captura se arma y se destruye en una cola de fondo: si el servicio de audio (coreaudiod) se traba,
@@ -895,7 +924,7 @@ static NSString *const vzKeys[VZS_COUNT]={@"espejo",@"vertical",@"horizontal"};
     NSData *j=[NSJSONSerialization dataWithJSONObject:@{@"bright":@(b),@"kbd":@(k),@"kbdAuto":@(ka)} options:0 error:nil];
     if(![j writeToFile:blackoutPath() atomically:YES]){ NSLog(@"MatiBar: no pude escribir blackout.json, cancelo el blackout"); return; } // sin salvavidas no hay blackout
     _blackout=YES; _preBlackMode=_mode;
-    if(ka)kbdAutoSet(NO); kbdSet(0); brightSetRaw([self blackoutTarget]);
+    if(ka)kbdAutoSet(NO); kbdSetNow(0); brightSetRaw([self blackoutTarget]); // teclado y pantalla al mismo tiempo
     _mode=4; [self applyMode]; [self updateBrightIcon]; [self heartbeatTimer:YES];
 }
 // latido cada 2 s con timer GCD estricto: el guardián devuelve el brillo si pasa 12 s sin latido
@@ -914,7 +943,7 @@ static NSString *const vzKeys[VZS_COUNT]={@"espejo",@"vertical",@"horizontal"};
     if(![[NSFileManager defaultManager] fileExistsAtPath:p]){ [self heartbeatTimer:NO]; _blackout=NO; _mode=(_preBlackMode==4)?0:_preBlackMode; [self applyMode]; [self updateBrightIcon]; return; } // el guardian ya restauro
     [[NSFileManager defaultManager] setAttributes:@{NSFileModificationDate:[NSDate date]} ofItemAtPath:p error:nil];
     float t=[self blackoutTarget]; if(brightGet()>t+0.02)brightSetRaw(t); // si el brillo automatico lo sube, lo vuelvo a bajar
-    if(kbdGet()>0.01)kbdSet(0);
+    if(kbdGet()>0.01)kbdSetNow(0);
 }
 // ---- mute (mantener audio) ----
 - (void)updateAudioIcon{ _audioBtn.image=[NSImage imageWithSystemSymbolName:(_muted?@"speaker.slash.fill":@"speaker.wave.2.fill") accessibilityDescription:nil]; }

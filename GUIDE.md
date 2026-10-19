@@ -20,7 +20,7 @@ Audio y Claude quedan siempre fijos a la derecha: los paneles cambian solo lo qu
 | 🔊 **Parlante** | Silencia / quita el silencio del sistema (el ícono cambia). Cambiar el volumen quita el silencio. |
 | **Carátula / canción** | Repite la canción actual (loop). Pasar de canción o que empiece otra lo apaga. |
 | ⏯ **Play / pausa** | Abre / cierra el visualizador. |
-| **Píxeles del visualizador** | Pasa al siguiente estilo. |
+| **Píxeles del visualizador** | Alterna entre horizontal y espejo. |
 | ☀ **Sol** | **Blackout**: pantalla y teclado apagados; en la barra quedan solo ☀ 🔊 ✳. Tocá ☀ para volver. |
 | **Reloj** | Abre Calendario. |
 | **Vista del clima** | Abre la app Clima. |
@@ -80,7 +80,7 @@ defaults write com.mati.matibar loopColor red     # o white
 - Hay un piso de seguridad: desde acá la pantalla nunca queda en negro por accidente.
 
 ## Blackout (mantener ☀)
-- Pantalla al 0 %, luz del teclado apagada, y en la barra quedan solo ☀ 🔊 ✳. Ideal para escuchar música a oscuras.
+- Pantalla al 0 % y luz del teclado apagada **al mismo instante**; en la barra quedan solo ☀ 🔊 ✳. Ideal para escuchar música a oscuras.
 - **Tocá ☀** para volver: el brillo y el teclado quedan como estaban (✳ también te saca, y abre Claude). En blackout, tocar 🔊 hace play/pausa.
 - **Salvavidas**: antes de apagar, MatiBar guarda tu brillo en un archivo, y un **proceso guardián** aparte lo vigila. Si MatiBar se cae, la matan o se cuelga 12 segundos con la pantalla negra, el guardián te devuelve el brillo y el teclado (y si MatiBar murió, también la barra de Apple). Si el Mac se reinicia en pleno blackout, MatiBar lo restaura al arrancar.
 
@@ -98,22 +98,22 @@ Tocá **el reloj** y todo a su derecha se transforma en la vista del día; tocá
 
 ## Visualizador (mantener ⏯ en modo audio)
 
-Quedan ⏮ ⏯ ⏭ y todo lo demás se vuelve un campo de píxeles cuadrados sobre negro que reacciona a **todo lo que suena en el Mac** (Spotify, YouTube, juegos). Mantené ⏯ otra vez para salir. **Mantené los píxeles** para cambiar de estilo; el que elegís queda guardado.
+Quedan ⏮ ⏯ ⏭ y todo lo demás se vuelve un campo de píxeles cuadrados sobre negro que reacciona a **todo lo que suena en el Mac** (Spotify, YouTube, juegos), a 30 fps y con una **escala térmica**: azul marino y violeta en lo tranquilo, rojo y naranja en lo fuerte, amarillo y blanco en los golpes. Mantené ⏯ otra vez para salir. **Mantené los píxeles** para alternar entre los dos estilos; el que elegís queda guardado.
 
 | Estilo | Cómo se ve |
 |--------|------------|
-| **Horizontal** (por defecto) | Cada píxel es una frecuencia fija, leída como texto: graves abajo a la izquierda, agudos arriba a la derecha. Cuando su frecuencia golpea, se enciende al rojo blanco y se enfría en el lugar (blanco → rojo → azul). Halo de 50 % a los vecinos. |
-| **Vertical** | El mismo mapa leído por columnas: graves a la izquierda, agudos a la derecha. Halo suave de 20 %. |
-| **Espejo** | Espectro simétrico: graves rojos al centro, agudos azules a los bordes; crece en alto con el volumen y late con el bombo. |
+| **Horizontal** (por defecto) | Cada píxel es una frecuencia fija, leída como texto: graves abajo a la izquierda, agudos arriba a la derecha. Se enciende al instante cuando su frecuencia golpea y se apaga apenas deja de sonar (sin cola). Halo de 50 % a los vecinos. |
+| **Espejo** (térmico) | Graves al centro, agudos a los bordes; cada barra crece en alto desde la fila del medio según el volumen (1, 3 o 5 filas). El color es temperatura: lo suave violeta, los golpes al amarillo y blanco, y las puntas de cada barra más frías que el centro. |
 
-- Horizontal y vertical son **balanceados**: cada píxel ve una tajada parecida del espectro (lineal hasta ~3,9 kHz, logarítmico arriba). Por eso una nota sostenida dibuja sus armónicos como un **peine** de dientes parejos.
+- **Notas sostenidas**: si un sonido se mantiene, sus píxeles se quedan encendidos mientras dure (más fuerte = más caliente) y se sueltan apenas se va.
 - **Nada es al azar**: el mismo sonido dibuja siempre el mismo patrón, y en silencio queda todo negro.
+- El horizontal es **balanceado**: cada píxel ve una tajada parecida del espectro (lineal hasta ~3,9 kHz, logarítmico arriba). Por eso una nota sostenida dibuja sus armónicos como un **peine** de dientes parejos.
 - La primera vez macOS pide permiso de **Grabación de audio del sistema** (solo el audio del Mac, nunca el micrófono). Si lo negaste, el visualizador te avisa cómo activarlo.
 - El audio se analiza en memoria y no se graba ni se guarda. La captura existe solo mientras el visualizador está abierto.
 - Funciona aunque uses una salida virtual como Background Music.
 
 ```bash
-defaults write com.mati.matibar visualizer horizontal   # o vertical, o espejo
+defaults write com.mati.matibar visualizer horizontal   # o espejo
 ```
 
 ## Encender / apagar

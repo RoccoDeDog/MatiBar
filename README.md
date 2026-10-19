@@ -5,7 +5,7 @@
 MatiBar replaces Apple's Control Strip with your own full-width Touch Bar: a live
 animated battery with real-time power draw, a Spotify / Apple Music player with a
 draggable timeline, system volume and brightness controls, an animated day & weather
-view, a hidden music visualizer, and a one-tap button to open Claude. No third-party
+view, a real-time music visualizer, and a one-tap button to open Claude. No third-party
 frameworks, no dependencies — just the system APIs that Apple's own Touch Bar uses.
 
 > Built for Apple Silicon MacBook Pro (13"/15"/16") with a Touch Bar, on modern macOS.
@@ -63,33 +63,43 @@ frameworks, no dependencies — just the system APIs that Apple's own Touch Bar 
   [Open-Meteo](https://open-meteo.com) API. Location is **precise** if you allow Location
   Services, otherwise approximate (IP-based) — no API key, works anywhere.
 
-## Visualizer — hold ⏯ for one second (audio view)
+## 🔥 The visualizer — hold ⏯ for one second
 
-A hidden easter egg: hold the play / pause button and everything to the right of
-⏮ ⏯ ⏭ turns into a field of square pixels that reacts to **whatever your Mac is
-playing** — Spotify, a browser, a game. Hold ⏯ again to leave. **Hold the pixels** to
-switch between the three styles (your choice is remembered).
+**The Touch Bar's best-kept secret.** Hold play / pause and the whole bar turns into a
+field of square pixels that reacts to **whatever your Mac is playing** — Spotify, YouTube
+in a browser, a game, anything — rendered at a locked 30 fps on a pure black background,
+with a thermal colour scale that runs from deep navy and violet through red and orange to
+yellow and white-hot. Hold ⏯ again to leave; **hold the pixels** to switch between the two
+styles (your choice is remembered).
 
-**Horizontal** (default) — every pixel owns a fixed frequency, read like lines of text:
-bass at the bottom-left, highs at the top-right. Pixels flash white-hot when their
-frequency hits and cool down in place.
+**Horizontal** (default) — a frequency map you can read. Every pixel owns one fixed
+frequency, laid out like lines of text: bass at the bottom-left, highs at the top-right.
+A pixel flashes white-hot the instant its frequency hits and goes dark the moment it stops,
+so every kick, snare, vocal and hi-hat lands in its own exact spot — play the same sound
+twice and you get the same picture.
 
 ![visualizer horizontal](screenshots/visualizer-horizontal.png)
 
-**Vertical** — the same frequency map read in columns: bass on the left, highs on the
-right.
-
-![visualizer vertical](screenshots/visualizer-vertical.png)
-
-**Mirror** — a symmetric spectrum: bass in red at the centre, highs in blue at the
-edges, growing taller with the volume.
+**Mirror** — a thermal spectrum. Bass in the centre, highs out to the edges, growing taller
+from the middle row with the volume. Quiet sounds glow cool violet; every hit heats its
+column up to yellow and white, and the tips of each bar stay cooler than its core.
 
 ![visualizer mirror](screenshots/visualizer-mirror.png)
 
-The two reactor styles use a *balanced* frequency map: every pixel sees a similar
-slice of the spectrum (linear up to ~3.9 kHz, logarithmic above), so a sustained note
-draws its harmonics as an evenly spaced comb. Nothing is random — the same sound
-always draws the same pattern.
+What makes it different:
+
+- **It's deterministic.** No random sparkles or fake motion — every pixel is driven by the
+  real spectrum, so patterns in the music become patterns on the bar. Silence is black.
+- **It holds notes.** A sound that keeps ringing keeps its pixels lit for as long as it
+  lasts (louder notes burn hotter), then they let go the instant it stops.
+- **It's balanced.** The horizontal map gives every pixel a similar slice of the spectrum
+  (linear up to ~3.9 kHz, logarithmic above), so a sustained note draws its harmonics as an
+  evenly spaced comb instead of a smear.
+- **It's light.** A private Core Audio process tap feeds an Accelerate FFT and a tiny
+  software rasterizer — about 6–10% of one core, and the tap exists only while the
+  visualizer is open.
+- **It's private.** System audio only (never the microphone), analysed in memory, never
+  recorded. Works with virtual outputs such as Background Music. Needs macOS 14.2+.
 
 ## Long-press shortcuts (hold for one second)
 
@@ -98,7 +108,7 @@ always draws the same pattern.
 | 🔊 **Speaker** | Mute / unmute the system (the icon shows it). Changing the volume unmutes. |
 | **Album art / song** | Loop the current song. Skipping or a new song ends the loop. |
 | ⏯ **Play / pause** | Open / close the visualizer. |
-| **Visualizer pixels** | Next visualizer style. |
+| **Visualizer pixels** | Switch visualizer style (horizontal ↔ mirror). |
 | ☀ **Sun** | **Blackout**: screen and keyboard backlight off, only ☀ 🔊 ✳ stay on the bar. Tap ☀ to come back. |
 | **Clock** | Open Calendar. |
 | **Weather view** | Open the Weather app. |
@@ -119,8 +129,8 @@ If the Mac restarts mid-blackout, MatiBar restores everything as it launches.
 ## Customise
 
 ```bash
-# visualizer style: horizontal (default), vertical, or mirror ("espejo")
-defaults write com.mati.matibar visualizer vertical
+# visualizer style: horizontal (default) or mirror ("espejo")
+defaults write com.mati.matibar visualizer espejo
 
 # song-loop indicator: 1 frame + arrows, 2 orbiting dot, 3 corner brackets,
 # 4 badge (always red), 5 two chasing dots + repeat glyph
@@ -150,6 +160,13 @@ macOS asks for a few permissions the first time each feature is used — all opt
 - **Automation** (Spotify / Music) — for the player controls. Approve it so playback works.
 - **Location** — precise weather. Without it, weather uses your approximate IP location.
 - **System Audio Recording Only** — for the visualizer (macOS 14.2 or later).
+
+**Tip for developers:** macOS remembers permissions per code signature. `build.sh` signs
+ad-hoc by default, which changes on every build, so macOS asks again after each rebuild.
+To keep your permissions across rebuilds, create a self-signed code-signing certificate
+named **MatiBar Dev Signing** (Keychain Access → Certificate Assistant → Create a
+Certificate → type *Code Signing*), or point `MATIBAR_SIGN_IDENTITY` at any signing
+identity you have — `build.sh` picks it up automatically.
 
 **Uninstall** (restores the normal Apple Touch Bar):
 
