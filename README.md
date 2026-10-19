@@ -10,7 +10,8 @@ draggable timeline, system volume and brightness controls, an animated day & wea
 view, a real-time music visualizer, and a one-tap button to open Claude. No third-party
 frameworks, no dependencies — just the system APIs that Apple's own Touch Bar uses.
 
-> Built for Apple Silicon MacBook Pro (13"/15"/16") with a Touch Bar, on modern macOS.
+> Tested on the 13" Apple Silicon (M1) MacBook Pro with Touch Bar, on macOS 26. It builds for
+> macOS 12 and later, but other Touch Bar models and macOS versions haven't been tested yet.
 > MTMR and the other old tools don't work on current macOS anymore — this one does,
 > because it talks to the Touch Bar APIs that are still alive today.
 
