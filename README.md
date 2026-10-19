@@ -1,5 +1,7 @@
 # MatiBar
 
+![MatiBar music visualizer running on the Touch Bar](screenshots/visualizer-horizontal.gif)
+
 **A fully custom MacBook Pro Touch Bar, written from scratch in Objective-C.**
 
 MatiBar replaces Apple's Control Strip with your own full-width Touch Bar: a live
@@ -84,7 +86,7 @@ twice and you get the same picture.
 from the middle row with the volume. Quiet sounds glow cool violet; every hit heats its
 column up to yellow and white, and the tips of each bar stay cooler than its core.
 
-![visualizer mirror](screenshots/visualizer-mirror.png)
+![visualizer mirror](screenshots/visualizer-mirror.gif)
 
 What makes it different:
 
@@ -144,6 +146,19 @@ restart).
 
 ## Install
 
+### With Homebrew (recommended)
+
+```bash
+brew install roccodedog/tap/matibar
+brew services start matibar
+```
+
+That's it: MatiBar is built from source on your Mac (no Gatekeeper warnings), takes over
+the full Touch Bar, and starts at every login. `brew services stop matibar` — or
+`brew uninstall matibar` — gives you Apple's normal Touch Bar back.
+
+### From source
+
 Requires **Xcode Command Line Tools** (`xcode-select --install`).
 
 ```bash
@@ -154,6 +169,7 @@ cd MatiBar
 
 This builds `MatiBar.app`, installs it to `/Applications`, switches the Touch Bar to
 full-width mode, and sets MatiBar (and its blackout guard) to launch at login.
+Use one method or the other, not both.
 
 macOS asks for a few permissions the first time each feature is used — all optional:
 
@@ -168,7 +184,7 @@ named **MatiBar Dev Signing** (Keychain Access → Certificate Assistant → Cre
 Certificate → type *Code Signing*), or point `MATIBAR_SIGN_IDENTITY` at any signing
 identity you have — `build.sh` picks it up automatically.
 
-**Uninstall** (restores the normal Apple Touch Bar):
+**Uninstall** a source install (restores the normal Apple Touch Bar):
 
 ```bash
 ./uninstall.sh
